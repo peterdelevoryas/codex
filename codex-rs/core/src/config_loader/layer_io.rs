@@ -38,9 +38,12 @@ pub(super) struct LoadedConfigLayers {
 pub(super) async fn load_config_layers_internal(
     codex_home: &Path,
     overrides: LoaderOverrides,
+    ignore_system_config: bool,
 ) -> io::Result<LoadedConfigLayers> {
     #[cfg(target_os = "macos")]
     let LoaderOverrides {
+        ignore_system_config: _,
+        system_config_path: _,
         managed_config_path,
         managed_preferences_base64,
         ..
@@ -48,6 +51,8 @@ pub(super) async fn load_config_layers_internal(
 
     #[cfg(not(target_os = "macos"))]
     let LoaderOverrides {
+        ignore_system_config: _,
+        system_config_path: _,
         managed_config_path,
         ..
     } = overrides;
@@ -56,6 +61,19 @@ pub(super) async fn load_config_layers_internal(
         managed_config_path.unwrap_or_else(|| managed_config_default_path(codex_home)),
     )?;
 
+    #[cfg(unix)]
+    let managed_config = if ignore_system_config {
+        None
+    } else {
+        read_config_from_path(&managed_config_path, false)
+            .await?
+            .map(|managed_config| MangedConfigFromFile {
+                managed_config,
+                file: managed_config_path.clone(),
+            })
+    };
+
+    #[cfg(not(unix))]
     let managed_config = read_config_from_path(&managed_config_path, false)
         .await?
         .map(|managed_config| MangedConfigFromFile {

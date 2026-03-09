@@ -1,6 +1,6 @@
 # `codex-core` config loader
 
-This module is the canonical place to **load and describe Codex configuration layers** (user config, CLI/session overrides, managed config, and MDM-managed preferences) and to produce:
+This module is the canonical place to **load and describe Codex configuration layers** (system config, user config, project config, CLI/session overrides, legacy managed config, and MDM-managed preferences) and to produce:
 
 - An **effective merged** TOML config.
 - **Per-key origins** metadata (which layer “wins” for a given key).
@@ -17,7 +17,7 @@ Exported from `codex_core::config_loader`:
   - `layers_high_to_low() -> Vec<ConfigLayer>`
   - `with_user_config(user_config) -> ConfigLayerStack`
 - `ConfigLayerEntry` (one layer’s `{name, config, version, disabled_reason}`; `name` carries source metadata)
-- `LoaderOverrides` (test/override hooks for managed config sources)
+- `LoaderOverrides` (test/override hooks for system and managed config sources)
 - `merge_toml_values(base, overlay)` (public helper used elsewhere)
 
 ## Layering model
@@ -25,13 +25,19 @@ Exported from `codex_core::config_loader`:
 Precedence is **top overrides bottom**:
 
 1. **MDM** managed preferences (macOS only)
-2. **System** managed config (e.g. `managed_config.toml`)
+2. **Legacy managed config** (`managed_config.toml`)
 3. **Session flags** (CLI overrides, applied as dotted-path TOML writes)
-4. **User** config (`config.toml`)
+4. **Project** config (`.codex/config.toml`)
+5. **User** config (`config.toml`)
+6. **System** config (`/etc/codex/config.toml` on Unix)
 
 Layers with a `disabled_reason` are still surfaced for UI, but are ignored when
 computing the effective config and origins metadata. This is what
 `ConfigLayerStack::effective_config()` implements.
+
+When `CODEX_IGNORE_SYSTEM_CONFIG` is set to a non-empty value, the system
+`config.toml` layer is added in a disabled state and legacy file-managed config
+is skipped. `requirements.toml` still applies.
 
 ## Typical usage
 

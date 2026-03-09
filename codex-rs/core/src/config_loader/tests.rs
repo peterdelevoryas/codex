@@ -204,9 +204,7 @@ extra = true
 
     let overrides = LoaderOverrides {
         managed_config_path: Some(managed_path),
-        #[cfg(target_os = "macos")]
-        managed_preferences_base64: None,
-        macos_managed_config_requirements_base64: None,
+        ..LoaderOverrides::default()
     };
 
     let cwd = AbsolutePathBuf::try_from(tmp.path()).expect("cwd");
@@ -245,7 +243,7 @@ async fn returns_empty_when_all_layers_missing() {
         // Force managed preferences to resolve as empty so this test does not
         // inherit non-empty machine-specific managed state.
         managed_preferences_base64: Some(String::new()),
-        macos_managed_config_requirements_base64: None,
+        ..LoaderOverrides::default()
     };
 
     let cwd = AbsolutePathBuf::try_from(tmp.path()).expect("cwd");
@@ -305,6 +303,87 @@ async fn returns_empty_when_all_layers_missing() {
             "expected empty table when configs missing"
         );
     }
+}
+
+#[tokio::test]
+async fn ignores_system_config_when_override_is_set() -> std::io::Result<()> {
+    let tmp = tempdir()?;
+    let system_path = tmp.path().join("system-config.toml");
+    tokio::fs::write(&system_path, "model = \"system\"\n").await?;
+    tokio::fs::write(tmp.path().join(CONFIG_TOML_FILE), "model = \"user\"\n").await?;
+
+    let cwd = AbsolutePathBuf::try_from(tmp.path())?;
+    let layers = load_config_layers_state(
+        tmp.path(),
+        Some(cwd),
+        &[] as &[(String, TomlValue)],
+        LoaderOverrides {
+            ignore_system_config: true,
+            system_config_path: Some(system_path.clone()),
+            ..LoaderOverrides::default()
+        },
+        CloudRequirementsLoader::default(),
+    )
+    .await?;
+
+    assert_eq!(
+        layers.effective_config().get("model"),
+        Some(&TomlValue::String("user".to_string()))
+    );
+
+    let system_layer = layers
+        .get_layers(
+            super::ConfigLayerStackOrdering::HighestPrecedenceFirst,
+            true,
+        )
+        .into_iter()
+        .find(|layer| matches!(layer.name, super::ConfigLayerSource::System { .. }))
+        .expect("system layer");
+    assert_eq!(
+        system_layer.disabled_reason.as_deref(),
+        Some("Ignored because CODEX_IGNORE_SYSTEM_CONFIG is set")
+    );
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn ignores_legacy_managed_config_when_override_is_set() -> std::io::Result<()> {
+    let tmp = tempdir()?;
+    let managed_path = tmp.path().join("managed_config.toml");
+    tokio::fs::write(&managed_path, "model = \"managed\"\n").await?;
+    tokio::fs::write(tmp.path().join(CONFIG_TOML_FILE), "model = \"user\"\n").await?;
+
+    let cwd = AbsolutePathBuf::try_from(tmp.path())?;
+    let layers = load_config_layers_state(
+        tmp.path(),
+        Some(cwd),
+        &[] as &[(String, TomlValue)],
+        LoaderOverrides {
+            ignore_system_config: true,
+            managed_config_path: Some(managed_path),
+            ..LoaderOverrides::default()
+        },
+        CloudRequirementsLoader::default(),
+    )
+    .await?;
+
+    assert_eq!(
+        layers.effective_config().get("model"),
+        Some(&TomlValue::String("user".to_string()))
+    );
+    assert!(
+        layers
+            .layers_high_to_low()
+            .into_iter()
+            .all(|layer| !matches!(
+                layer.name,
+                super::ConfigLayerSource::LegacyManagedConfigTomlFromFile { .. }
+            )),
+        "legacy managed config layer should be skipped"
+    );
+
+    Ok(())
 }
 
 #[cfg(target_os = "macos")]

@@ -16,6 +16,8 @@ use toml::Value as TomlValue;
 /// LoaderOverrides overrides managed configuration inputs (primarily for tests).
 #[derive(Debug, Default, Clone)]
 pub struct LoaderOverrides {
+    pub ignore_system_config: bool,
+    pub system_config_path: Option<PathBuf>,
     pub managed_config_path: Option<PathBuf>,
     //TODO(gt): Add a macos_ prefix to this field and remove the target_os check.
     #[cfg(target_os = "macos")]

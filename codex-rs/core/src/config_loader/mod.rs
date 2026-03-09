@@ -60,6 +60,7 @@ pub(crate) use codex_config::version_for_toml;
 /// Note that /etc/codex/ is treated as a "config folder," so subfolders such
 /// as skills/ and rules/ will also be honored.
 pub const SYSTEM_CONFIG_TOML_FILE_UNIX: &str = "/etc/codex/config.toml";
+const IGNORE_SYSTEM_CONFIG_ENV_VAR: &str = "CODEX_IGNORE_SYSTEM_CONFIG";
 
 #[cfg(windows)]
 const DEFAULT_PROGRAM_DATA_DIR_WINDOWS: &str = r"C:\ProgramData";
@@ -115,6 +116,12 @@ pub async fn load_config_layers_state(
     overrides: LoaderOverrides,
     cloud_requirements: CloudRequirementsLoader,
 ) -> io::Result<ConfigLayerStack> {
+    let ignore_system_config = overrides.ignore_system_config || should_ignore_system_config();
+    let system_config_path_override = overrides
+        .system_config_path
+        .as_deref()
+        .map(AbsolutePathBuf::from_absolute_path)
+        .transpose()?;
     let mut config_requirements_toml = ConfigRequirementsWithSources::default();
 
     if let Some(requirements) = cloud_requirements.get().await.map_err(io::Error::other)? {
@@ -137,12 +144,15 @@ pub async fn load_config_layers_state(
 
     // Make a best-effort to support the legacy `managed_config.toml` as a
     // requirements specification.
-    let loaded_config_layers = layer_io::load_config_layers_internal(codex_home, overrides).await?;
-    load_requirements_from_legacy_scheme(
-        &mut config_requirements_toml,
-        loaded_config_layers.clone(),
-    )
-    .await?;
+    let loaded_config_layers =
+        layer_io::load_config_layers_internal(codex_home, overrides, ignore_system_config).await?;
+    if !ignore_system_config {
+        load_requirements_from_legacy_scheme(
+            &mut config_requirements_toml,
+            loaded_config_layers.clone(),
+        )
+        .await?;
+    }
 
     let mut layers = Vec::<ConfigLayerEntry>::new();
 
@@ -162,8 +172,19 @@ pub async fn load_config_layers_state(
 
     // Include an entry for the "system" config folder, loading its config.toml,
     // if it exists.
-    let system_config_toml_file = system_config_toml_file()?;
-    let system_layer =
+    let system_config_toml_file = match system_config_path_override {
+        Some(path) => path,
+        None => system_config_toml_file()?,
+    };
+    let system_layer = if ignore_system_config {
+        ConfigLayerEntry::new_disabled(
+            ConfigLayerSource::System {
+                file: system_config_toml_file.clone(),
+            },
+            TomlValue::Table(toml::map::Map::new()),
+            format!("Ignored because {IGNORE_SYSTEM_CONFIG_ENV_VAR} is set"),
+        )
+    } else {
         load_config_toml_for_required_layer(&system_config_toml_file, |config_toml| {
             ConfigLayerEntry::new(
                 ConfigLayerSource::System {
@@ -172,7 +193,8 @@ pub async fn load_config_layers_state(
                 config_toml,
             )
         })
-        .await?;
+        .await?
+    };
     layers.push(system_layer);
 
     // Add a layer for $CODEX_HOME/config.toml if it exists. Note if the file
@@ -475,6 +497,13 @@ fn windows_program_data_dir_from_known_folder() -> io::Result<PathBuf> {
     };
 
     Ok(path)
+}
+
+fn should_ignore_system_config() -> bool {
+    matches!(
+        std::env::var_os(IGNORE_SYSTEM_CONFIG_ENV_VAR),
+        Some(value) if !value.is_empty()
+    )
 }
 
 async fn load_requirements_from_legacy_scheme(

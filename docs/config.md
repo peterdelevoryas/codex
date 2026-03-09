@@ -6,6 +6,12 @@ For advanced configuration instructions, see [this documentation](https://develo
 
 For a full configuration reference, see [this documentation](https://developers.openai.com/codex/config-reference).
 
+## Ignoring system config
+
+Set `CODEX_IGNORE_SYSTEM_CONFIG=1` to ignore system-managed `config.toml`
+layers such as `/etc/codex/config.toml` while still honoring
+`requirements.toml`.
+
 ## Connecting to MCP servers
 
 Codex can connect to MCP servers configured in `~/.codex/config.toml`. See the configuration reference for the latest MCP server options:
