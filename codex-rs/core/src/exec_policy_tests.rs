@@ -283,6 +283,86 @@ async fn loads_policies_from_policy_subdirectory() {
 }
 
 #[tokio::test]
+async fn ignores_policies_from_system_config_folder() -> anyhow::Result<()> {
+    let temp_dir = tempdir()?;
+    let system_folder = temp_dir.path().join("enterprise");
+    let policy_dir = system_folder.join(RULES_DIR_NAME);
+    fs::create_dir_all(&policy_dir)?;
+    fs::write(
+        policy_dir.join("deny.rules"),
+        r#"prefix_rule(pattern=["rm"], decision="forbidden")"#,
+    )?;
+
+    let system_file = AbsolutePathBuf::from_absolute_path(system_folder.join("config.toml"))?;
+    let layer = ConfigLayerEntry::new(
+        ConfigLayerSource::System { file: system_file },
+        TomlValue::Table(Default::default()),
+    );
+    let config_stack = ConfigLayerStack::new(
+        vec![layer],
+        ConfigRequirements::default(),
+        ConfigRequirementsToml::default(),
+    )?;
+
+    let policy = load_exec_policy(&config_stack).await?;
+    let commands = [vec!["rm".to_string()]];
+    assert_eq!(
+        Evaluation {
+            decision: Decision::Allow,
+            matched_rules: vec![RuleMatch::HeuristicsRuleMatch {
+                command: vec!["rm".to_string()],
+                decision: Decision::Allow
+            }],
+        },
+        policy.check_multiple(commands.iter(), &|_| Decision::Allow)
+    );
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn ignores_exec_policy_requirements_from_system_requirements_toml() -> anyhow::Result<()> {
+    let temp_dir = tempdir()?;
+
+    let mut requirements_exec_policy = Policy::empty();
+    requirements_exec_policy.add_prefix_rule(&["rm".to_string()], Decision::Forbidden)?;
+
+    let requirements_file =
+        AbsolutePathBuf::from_absolute_path(temp_dir.path().join("requirements.toml"))?;
+    let requirements = ConfigRequirements {
+        exec_policy: Some(codex_config::Sourced::new(
+            codex_config::RequirementsExecPolicy::new(requirements_exec_policy),
+            codex_config::RequirementSource::SystemRequirementsToml {
+                file: requirements_file,
+            },
+        )),
+        ..ConfigRequirements::default()
+    };
+    let dot_codex_folder = AbsolutePathBuf::from_absolute_path(temp_dir.path())?;
+    let layer = ConfigLayerEntry::new(
+        ConfigLayerSource::Project { dot_codex_folder },
+        TomlValue::Table(Default::default()),
+    );
+    let config_stack =
+        ConfigLayerStack::new(vec![layer], requirements, ConfigRequirementsToml::default())?;
+
+    let policy = load_exec_policy(&config_stack).await?;
+    let commands = [vec!["rm".to_string()]];
+    assert_eq!(
+        Evaluation {
+            decision: Decision::Allow,
+            matched_rules: vec![RuleMatch::HeuristicsRuleMatch {
+                command: vec!["rm".to_string()],
+                decision: Decision::Allow
+            }],
+        },
+        policy.check_multiple(commands.iter(), &|_| Decision::Allow)
+    );
+
+    Ok(())
+}
+
+#[tokio::test]
 async fn merges_requirements_exec_policy_network_rules() -> anyhow::Result<()> {
     let temp_dir = tempdir()?;
 

@@ -118,34 +118,9 @@ pub async fn load_config_layers_state(
     overrides: LoaderOverrides,
     cloud_requirements: CloudRequirementsLoader,
 ) -> io::Result<ConfigLayerStack> {
-    let mut config_requirements_toml = ConfigRequirementsWithSources::default();
-
-    if let Some(requirements) = cloud_requirements.get().await.map_err(io::Error::other)? {
-        config_requirements_toml
-            .merge_unset_fields(RequirementSource::CloudRequirements, requirements);
-    }
-
-    #[cfg(target_os = "macos")]
-    macos::load_managed_admin_requirements_toml(
-        &mut config_requirements_toml,
-        overrides
-            .macos_managed_config_requirements_base64
-            .as_deref(),
-    )
-    .await?;
-
-    // Honor the system requirements.toml location.
-    let requirements_toml_file = system_requirements_toml_file()?;
-    load_requirements_toml(&mut config_requirements_toml, requirements_toml_file).await?;
-
-    // Make a best-effort to support the legacy `managed_config.toml` as a
-    // requirements specification.
-    let loaded_config_layers = layer_io::load_config_layers_internal(codex_home, overrides).await?;
-    load_requirements_from_legacy_scheme(
-        &mut config_requirements_toml,
-        loaded_config_layers.clone(),
-    )
-    .await?;
+    let _ = overrides;
+    let _ = cloud_requirements;
+    let config_requirements_toml = ConfigRequirementsWithSources::default();
 
     let mut layers = Vec::<ConfigLayerEntry>::new();
 
@@ -163,24 +138,9 @@ pub async fn load_config_layers_state(
         )?)
     };
 
-    // Include an entry for the "system" config folder, loading its config.toml,
-    // if it exists.
-    let system_config_toml_file = system_config_toml_file()?;
-    let system_layer =
-        load_config_toml_for_required_layer(&system_config_toml_file, |config_toml| {
-            ConfigLayerEntry::new(
-                ConfigLayerSource::System {
-                    file: system_config_toml_file.clone(),
-                },
-                config_toml,
-            )
-        })
-        .await?;
-    layers.push(system_layer);
-
-    // Add a layer for $CODEX_HOME/config.toml if it exists. Note if the file
-    // exists, but is malformed, then this error should be propagated to the
-    // user.
+    // Local customization: only honor the user's CODEX_HOME/config.toml and
+    // per-session overrides. This intentionally ignores system config,
+    // managed config, cloud/admin requirements, and project-local config.
     let user_file = AbsolutePathBuf::resolve_path_against_base(CONFIG_TOML_FILE, codex_home)?;
     let user_layer = load_config_toml_for_required_layer(&user_file, |config_toml| {
         ConfigLayerEntry::new(
@@ -193,109 +153,11 @@ pub async fn load_config_layers_state(
     .await?;
     layers.push(user_layer);
 
-    if let Some(cwd) = cwd {
-        let mut merged_so_far = TomlValue::Table(toml::map::Map::new());
-        for layer in &layers {
-            merge_toml_values(&mut merged_so_far, &layer.config);
-        }
-        if let Some(cli_overrides_layer) = cli_overrides_layer.as_ref() {
-            merge_toml_values(&mut merged_so_far, cli_overrides_layer);
-        }
-
-        let project_root_markers = match project_root_markers_from_config(&merged_so_far) {
-            Ok(markers) => markers.unwrap_or_else(default_project_root_markers),
-            Err(err) => {
-                if let Some(config_error) = first_layer_config_error_from_entries(&layers).await {
-                    return Err(io_error_from_config_error(
-                        io::ErrorKind::InvalidData,
-                        config_error,
-                        /*source*/ None,
-                    ));
-                }
-                return Err(err);
-            }
-        };
-        let project_trust_context = match project_trust_context(
-            &merged_so_far,
-            &cwd,
-            &project_root_markers,
-            codex_home,
-            &user_file,
-        )
-        .await
-        {
-            Ok(context) => context,
-            Err(err) => {
-                let source = err
-                    .get_ref()
-                    .and_then(|err| err.downcast_ref::<toml::de::Error>())
-                    .cloned();
-                if let Some(config_error) = first_layer_config_error_from_entries(&layers).await {
-                    return Err(io_error_from_config_error(
-                        io::ErrorKind::InvalidData,
-                        config_error,
-                        source,
-                    ));
-                }
-                return Err(err);
-            }
-        };
-        let project_layers = load_project_layers(
-            &cwd,
-            &project_trust_context.project_root,
-            &project_trust_context,
-            codex_home,
-        )
-        .await?;
-        layers.extend(project_layers);
-    }
-
     // Add a layer for runtime overrides from the CLI or UI, if any exist.
     if let Some(cli_overrides_layer) = cli_overrides_layer {
         layers.push(ConfigLayerEntry::new(
             ConfigLayerSource::SessionFlags,
             cli_overrides_layer,
-        ));
-    }
-
-    // Make a best-effort to support the legacy `managed_config.toml` as a
-    // config layer on top of everything else. For fields in
-    // `managed_config.toml` that do not have an equivalent in
-    // `ConfigRequirements`, note users can still override these values on a
-    // per-turn basis in the TUI and VS Code.
-    let LoadedConfigLayers {
-        managed_config,
-        managed_config_from_mdm,
-    } = loaded_config_layers;
-    if let Some(config) = managed_config {
-        let managed_parent = config.file.as_path().parent().ok_or_else(|| {
-            io::Error::new(
-                io::ErrorKind::InvalidData,
-                format!(
-                    "Managed config file {} has no parent directory",
-                    config.file.as_path().display()
-                ),
-            )
-        })?;
-        let managed_config =
-            resolve_relative_paths_in_config_toml(config.managed_config, managed_parent)?;
-        layers.push(ConfigLayerEntry::new(
-            ConfigLayerSource::LegacyManagedConfigTomlFromFile { file: config.file },
-            managed_config,
-        ));
-    }
-    if let Some(config) = managed_config_from_mdm {
-        // As a general rule, config from MDM should _not_ include relative
-        // paths, starting with `./`, but a path starting with `~/` _is_ a
-        // supported use case. Because resolve_relative_paths_in_config_toml()
-        // relies on AbsolutePathBufGuard to resolve `~/`, we must supply a
-        // value for base_dir, so codex_home is as good a value as any.
-        let managed_config =
-            resolve_relative_paths_in_config_toml(config.managed_config, codex_home)?;
-        layers.push(ConfigLayerEntry::new_with_raw_toml(
-            ConfigLayerSource::LegacyManagedConfigTomlFromMdm,
-            managed_config,
-            config.raw_toml,
         ));
     }
 

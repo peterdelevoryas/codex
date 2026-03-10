@@ -4,9 +4,11 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use arc_swap::ArcSwap;
+use codex_app_server_protocol::ConfigLayerSource;
 
 use crate::config_loader::ConfigLayerStack;
 use crate::config_loader::ConfigLayerStackOrdering;
+use crate::config_loader::RequirementSource;
 use crate::is_dangerous_command::command_might_be_dangerous;
 use crate::is_safe_command::is_known_safe_command;
 use codex_execpolicy::AmendError;
@@ -493,6 +495,9 @@ pub async fn load_exec_policy(config_stack: &ConfigLayerStack) -> Result<Policy,
         ConfigLayerStackOrdering::LowestPrecedenceFirst,
         /*include_disabled*/ false,
     ) {
+        if matches!(&layer.name, ConfigLayerSource::System { .. }) {
+            continue;
+        }
         if let Some(config_folder) = layer.config_folder() {
             #[expect(clippy::expect_used)]
             let policy_dir = config_folder.join(RULES_DIR_NAME).expect("safe join");
@@ -530,6 +535,12 @@ pub async fn load_exec_policy(config_stack: &ConfigLayerStack) -> Result<Policy,
     let Some(requirements_policy) = config_stack.requirements().exec_policy.as_deref() else {
         return Ok(policy);
     };
+    if matches!(
+        config_stack.requirements().exec_policy_source(),
+        Some(RequirementSource::SystemRequirementsToml { .. })
+    ) {
+        return Ok(policy);
+    }
 
     Ok(policy.merge_overlay(requirements_policy.as_ref()))
 }
