@@ -1,86 +1,20 @@
 use std::path::Path;
-use std::path::PathBuf;
 
-use codex_protocol::permissions::FileSystemAccessMode;
-use codex_protocol::permissions::FileSystemPath;
+pub(crate) use codex_protocol::permissions::FileSystemReadDenyMatcher as ReadDenyMatcher;
 use codex_protocol::permissions::FileSystemSandboxPolicy;
-use codex_protocol::permissions::FileSystemSpecialPath;
-use codex_utils_absolute_path::AbsolutePathBuf;
 
 use crate::function_tool::FunctionCallError;
 
 const DENY_READ_POLICY_MESSAGE: &str =
     "access denied: reading this path is blocked by filesystem deny_read policy";
 
-pub(crate) struct ReadDenyMatcher {
-    denied_candidates: Vec<Vec<PathBuf>>,
-    root_deny_policy: Option<RootDenyPolicy>,
-}
-
-struct RootDenyPolicy {
-    file_system_sandbox_policy: FileSystemSandboxPolicy,
-    cwd: PathBuf,
-}
-
-impl ReadDenyMatcher {
-    pub(crate) fn new(
-        file_system_sandbox_policy: &FileSystemSandboxPolicy,
-        cwd: &Path,
-    ) -> Option<Self> {
-        if !file_system_sandbox_policy.has_denied_read_restrictions() {
-            return None;
-        }
-
-        let denied_candidates = file_system_sandbox_policy
-            .get_unreadable_roots_with_cwd(cwd)
-            .into_iter()
-            .map(|path| normalized_and_canonical_candidates(path.as_path()))
-            .collect();
-        let has_root_deny = file_system_sandbox_policy.entries.iter().any(|entry| {
-            entry.access == FileSystemAccessMode::None
-                && matches!(
-                    entry.path,
-                    FileSystemPath::Special {
-                        value: FileSystemSpecialPath::Root,
-                    }
-                )
-        });
-        let root_deny_policy = if has_root_deny {
-            Some(RootDenyPolicy {
-                file_system_sandbox_policy: file_system_sandbox_policy.clone(),
-                cwd: cwd.to_path_buf(),
-            })
-        } else {
-            None
-        };
-        Some(Self {
-            denied_candidates,
-            root_deny_policy,
-        })
-    }
-
-    pub(crate) fn is_read_denied(&self, path: &Path) -> bool {
-        let path_candidates = normalized_and_canonical_candidates(path);
-        if matches_any_candidate_prefix(&path_candidates, &self.denied_candidates) {
-            return true;
-        }
-
-        self.root_deny_policy
-            .as_ref()
-            .is_some_and(|root_deny_policy| {
-                !root_deny_policy
-                    .file_system_sandbox_policy
-                    .can_read_path_with_cwd(path, root_deny_policy.cwd.as_path())
-            })
-    }
-}
-
 pub(crate) fn ensure_read_allowed(
     path: &Path,
     file_system_sandbox_policy: &FileSystemSandboxPolicy,
     cwd: &Path,
 ) -> Result<(), FunctionCallError> {
-    if ReadDenyMatcher::new(file_system_sandbox_policy, cwd)
+    if file_system_sandbox_policy
+        .read_deny_matcher_with_cwd(cwd)
         .is_some_and(|matcher| matcher.is_read_denied(path))
     {
         return Err(FunctionCallError::RespondToModel(format!(
@@ -97,45 +31,9 @@ pub(crate) fn is_read_denied(
     file_system_sandbox_policy: &FileSystemSandboxPolicy,
     cwd: &Path,
 ) -> bool {
-    ReadDenyMatcher::new(file_system_sandbox_policy, cwd)
+    file_system_sandbox_policy
+        .read_deny_matcher_with_cwd(cwd)
         .is_some_and(|matcher| matcher.is_read_denied(path))
-}
-
-fn normalized_and_canonical_candidates(path: &Path) -> Vec<PathBuf> {
-    let mut candidates = Vec::new();
-
-    if let Ok(normalized) = AbsolutePathBuf::from_absolute_path(path) {
-        push_unique(&mut candidates, normalized.to_path_buf());
-    } else {
-        push_unique(&mut candidates, path.to_path_buf());
-    }
-
-    if let Ok(canonical) = path.canonicalize()
-        && let Ok(canonical_absolute) = AbsolutePathBuf::from_absolute_path(canonical)
-    {
-        push_unique(&mut candidates, canonical_absolute.to_path_buf());
-    }
-
-    candidates
-}
-
-fn matches_any_candidate_prefix(
-    path_candidates: &[PathBuf],
-    candidate_sets: &[Vec<PathBuf>],
-) -> bool {
-    candidate_sets.iter().any(|candidates| {
-        path_candidates.iter().any(|path_candidate| {
-            candidates.iter().any(|candidate| {
-                path_candidate == candidate || path_candidate.starts_with(candidate)
-            })
-        })
-    })
-}
-
-fn push_unique(candidates: &mut Vec<PathBuf>, candidate: PathBuf) {
-    if !candidates.iter().any(|existing| existing == &candidate) {
-        candidates.push(candidate);
-    }
 }
 
 #[cfg(test)]
@@ -144,6 +42,7 @@ mod tests {
     use codex_protocol::permissions::FileSystemPath;
     use codex_protocol::permissions::FileSystemSandboxEntry;
     use codex_protocol::permissions::FileSystemSpecialPath;
+    use codex_utils_absolute_path::AbsolutePathBuf;
     use pretty_assertions::assert_eq;
     use tempfile::tempdir;
 

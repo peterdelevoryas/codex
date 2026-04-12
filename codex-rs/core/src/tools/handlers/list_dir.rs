@@ -99,7 +99,9 @@ impl ToolHandler for ListDirHandler {
             ));
         }
         ensure_read_allowed(&path, &turn.file_system_sandbox_policy, &turn.cwd)?;
-        let read_deny_matcher = ReadDenyMatcher::new(&turn.file_system_sandbox_policy, &turn.cwd);
+        let read_deny_matcher = turn
+            .file_system_sandbox_policy
+            .read_deny_matcher_with_cwd(&turn.cwd);
 
         let entries =
             list_dir_slice_with_policy(&path, offset, limit, depth, read_deny_matcher.as_ref())

@@ -156,6 +156,19 @@ struct FileSystemSemanticSignature {
     unreadable_roots: Vec<AbsolutePathBuf>,
 }
 
+/// Reusable matcher for direct filesystem reads under a split filesystem policy.
+///
+/// Sandbox backends consume readable and unreadable root sets directly, but
+/// in-process tools need to evaluate individual paths with the same root-deny,
+/// carveout, and symlink-alias semantics.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FileSystemReadDenyMatcher {
+    denied_candidates: Vec<Vec<AbsolutePathBuf>>,
+    readable_roots_for_root_deny: Vec<Vec<AbsolutePathBuf>>,
+    cwd: PathBuf,
+    has_root_deny: bool,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema, TS)]
 #[serde(tag = "type", rename_all = "snake_case")]
 #[ts(tag = "type")]
@@ -196,6 +209,19 @@ impl FileSystemSandboxPolicy {
                 .entries
                 .iter()
                 .any(|entry| entry.access == FileSystemAccessMode::None)
+    }
+
+    fn has_root_deny_entry(&self) -> bool {
+        matches!(self.kind, FileSystemSandboxKind::Restricted)
+            && self.entries.iter().any(|entry| {
+                entry.access == FileSystemAccessMode::None
+                    && matches!(
+                        entry.path,
+                        FileSystemPath::Special {
+                            value: FileSystemSpecialPath::Root,
+                        }
+                    )
+            })
     }
 
     pub fn has_denied_read_restrictions(&self) -> bool {
@@ -395,6 +421,36 @@ impl FileSystemSandboxPolicy {
 
     pub fn can_write_path_with_cwd(&self, path: &Path, cwd: &Path) -> bool {
         self.resolve_access_with_cwd(path, cwd).can_write()
+    }
+
+    /// Builds a matcher for in-process read checks, or None when no deny-read
+    /// restriction is present.
+    pub fn read_deny_matcher_with_cwd(&self, cwd: &Path) -> Option<FileSystemReadDenyMatcher> {
+        if !self.has_denied_read_restrictions() {
+            return None;
+        }
+
+        let has_root_deny = self.has_root_deny_entry();
+        let readable_roots_for_root_deny = if has_root_deny {
+            self.get_readable_roots_with_cwd(cwd)
+                .into_iter()
+                .map(|path| normalized_and_canonical_candidates(path.as_path(), cwd))
+                .collect()
+        } else {
+            Vec::new()
+        };
+        let denied_candidates = self
+            .get_unreadable_roots_with_cwd(cwd)
+            .into_iter()
+            .map(|path| normalized_and_canonical_candidates(path.as_path(), cwd))
+            .collect();
+
+        Some(FileSystemReadDenyMatcher {
+            denied_candidates,
+            readable_roots_for_root_deny,
+            cwd: cwd.to_path_buf(),
+            has_root_deny,
+        })
     }
 
     pub fn with_additional_readable_roots(
@@ -801,6 +857,19 @@ impl FileSystemSandboxPolicy {
     }
 }
 
+impl FileSystemReadDenyMatcher {
+    /// Returns true when path should be blocked by deny-read policy.
+    pub fn is_read_denied(&self, path: &Path) -> bool {
+        let path_candidates = normalized_and_canonical_candidates(path, self.cwd.as_path());
+        if matches_any_candidate_prefix(&path_candidates, &self.denied_candidates) {
+            return true;
+        }
+
+        self.has_root_deny
+            && !matches_any_candidate_prefix(&path_candidates, &self.readable_roots_for_root_deny)
+    }
+}
+
 impl From<&SandboxPolicy> for NetworkSandboxPolicy {
     fn from(value: &SandboxPolicy) -> Self {
         if value.has_full_network_access() {
@@ -953,6 +1022,44 @@ fn resolve_candidate_path(path: &Path, cwd: &Path) -> Option<AbsolutePathBuf> {
         AbsolutePathBuf::from_absolute_path(path).ok()
     } else {
         Some(AbsolutePathBuf::resolve_path_against_base(path, cwd))
+    }
+}
+
+fn normalized_and_canonical_candidates(path: &Path, cwd: &Path) -> Vec<AbsolutePathBuf> {
+    let mut candidates = Vec::new();
+    let normalized = AbsolutePathBuf::from_absolute_path(path)
+        .unwrap_or_else(|_| AbsolutePathBuf::resolve_path_against_base(path, cwd));
+    push_unique_path(&mut candidates, normalized.clone());
+
+    let effective = normalize_effective_absolute_path(normalized.clone());
+    push_unique_path(&mut candidates, effective);
+
+    if let Ok(canonical) = normalized.as_path().canonicalize()
+        && let Ok(canonical_absolute) = AbsolutePathBuf::from_absolute_path(canonical)
+    {
+        push_unique_path(&mut candidates, canonical_absolute);
+    }
+
+    candidates
+}
+
+fn matches_any_candidate_prefix(
+    path_candidates: &[AbsolutePathBuf],
+    candidate_sets: &[Vec<AbsolutePathBuf>],
+) -> bool {
+    candidate_sets.iter().any(|candidates| {
+        path_candidates.iter().any(|path_candidate| {
+            candidates.iter().any(|candidate| {
+                path_candidate == candidate
+                    || path_candidate.as_path().starts_with(candidate.as_path())
+            })
+        })
+    })
+}
+
+fn push_unique_path(candidates: &mut Vec<AbsolutePathBuf>, candidate: AbsolutePathBuf) {
+    if !candidates.iter().any(|existing| existing == &candidate) {
+        candidates.push(candidate);
     }
 }
 
