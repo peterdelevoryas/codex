@@ -1463,6 +1463,7 @@ dependencies = [
  "codex-git-utils",
  "codex-login",
  "codex-mcp",
+ "codex-model-provider-info",
  "codex-models-manager",
  "codex-otel",
  "codex-protocol",
@@ -1517,6 +1518,7 @@ dependencies = [
  "codex-app-server",
  "codex-app-server-protocol",
  "codex-arg0",
+ "codex-config",
  "codex-core",
  "codex-exec-server",
  "codex-feedback",
@@ -1863,6 +1865,7 @@ name = "codex-config"
 version = "0.0.0"
 dependencies = [
  "anyhow",
+ "async-trait",
  "codex-app-server-protocol",
  "codex-execpolicy",
  "codex-features",
