@@ -1131,15 +1131,15 @@ async fn mcp_tool_exposure_directly_exposes_explicit_apps_without_deferred_overl
     assert!(deferred_tools.contains_key("mcp__rmcp__tool_0"));
 }
 
-#[test]
-fn mcp_tool_exposure_directly_exposes_builtin_codex_apps_library_tools_without_connectors() {
-    let config = test_config();
-    let tools_config = tools_config_for_mcp_tool_exposure(/*search_tool*/ true);
+#[tokio::test]
+async fn mcp_tool_exposure_directly_exposes_builtin_codex_apps_library_tools_without_connectors() {
+    let config = test_config().await;
+    let tools_config = tools_config_for_mcp_tool_exposure(/*search_tool*/ true).await;
     let mcp_tools = HashMap::from([(
-        "mcp__codex_apps__search_library_files".to_string(),
+        "mcp__codex_apps__library_search_file".to_string(),
         make_mcp_tool(
             CODEX_APPS_MCP_SERVER_NAME,
-            "search_library_files",
+            "library_search_file",
             /*connector_id*/ None,
             /*connector_name*/ None,
         ),
@@ -1155,21 +1155,21 @@ fn mcp_tool_exposure_directly_exposes_builtin_codex_apps_library_tools_without_c
 
     assert_eq!(
         exposure.direct_tools.into_keys().collect::<Vec<_>>(),
-        vec!["mcp__codex_apps__search_library_files".to_string()]
+        vec!["mcp__codex_apps__library_search_file".to_string()]
     );
     assert!(exposure.deferred_tools.is_none());
 }
 
-#[test]
-fn mcp_tool_exposure_keeps_builtin_codex_apps_library_tools_direct_in_large_search_sets() {
-    let config = test_config();
-    let tools_config = tools_config_for_mcp_tool_exposure(/*search_tool*/ true);
+#[tokio::test]
+async fn mcp_tool_exposure_keeps_builtin_codex_apps_library_tools_direct_in_large_search_sets() {
+    let config = test_config().await;
+    let tools_config = tools_config_for_mcp_tool_exposure(/*search_tool*/ true).await;
     let mut mcp_tools = numbered_mcp_tools(DIRECT_MCP_TOOL_EXPOSURE_THRESHOLD);
     mcp_tools.insert(
-        "mcp__codex_apps__search_library_files".to_string(),
+        "mcp__codex_apps__library_search_file".to_string(),
         make_mcp_tool(
             CODEX_APPS_MCP_SERVER_NAME,
-            "search_library_files",
+            "library_search_file",
             /*connector_id*/ None,
             /*connector_name*/ None,
         ),
@@ -1185,13 +1185,13 @@ fn mcp_tool_exposure_keeps_builtin_codex_apps_library_tools_direct_in_large_sear
 
     assert_eq!(
         exposure.direct_tools.into_keys().collect::<Vec<_>>(),
-        vec!["mcp__codex_apps__search_library_files".to_string()]
+        vec!["mcp__codex_apps__library_search_file".to_string()]
     );
     let deferred_tools = exposure
         .deferred_tools
         .as_ref()
         .expect("large tool sets should be discoverable through tool_search");
-    assert!(deferred_tools.contains_key("mcp__codex_apps__search_library_files"));
+    assert!(deferred_tools.contains_key("mcp__codex_apps__library_search_file"));
     assert!(deferred_tools.contains_key("mcp__rmcp__tool_0"));
 }
 
