@@ -53,13 +53,7 @@ pub struct AgentIdentityAuthRecord {
     pub agent_private_key: String,
     pub registered_at: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub background_task: Option<AgentBackgroundTaskAuthRecord>,
-}
-
-#[derive(Deserialize, Serialize, Clone, Debug, PartialEq, Eq)]
-pub struct AgentBackgroundTaskAuthRecord {
-    pub task_id: String,
-    pub registered_at: String,
+    pub background_task_id: Option<String>,
 }
 
 pub(super) fn get_auth_file(codex_home: &Path) -> PathBuf {

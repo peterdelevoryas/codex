@@ -27,7 +27,6 @@ use tracing::debug;
 use tracing::info;
 use tracing::warn;
 
-use crate::AgentBackgroundTaskAuthRecord;
 use crate::AgentIdentityAuthRecord;
 use crate::AuthManager;
 use crate::CodexAuth;
@@ -86,15 +85,8 @@ struct StoredAgentIdentity {
     private_key_pkcs8_base64: String,
     public_key_ssh: String,
     registered_at: String,
-    background_task: Option<RegisteredBackgroundTask>,
+    background_task_id: Option<String>,
     abom: AgentBillOfMaterials,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
-struct RegisteredBackgroundTask {
-    agent_runtime_id: String,
-    task_id: String,
-    registered_at: String,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -206,25 +198,21 @@ impl BackgroundAgentTaskManager {
         let mut stored_identity = self
             .ensure_registered_identity_for_binding(auth, &binding)
             .await?;
-        let background_task = match stored_identity.background_task.clone() {
-            Some(background_task)
-                if background_task.agent_runtime_id == stored_identity.agent_runtime_id =>
-            {
-                background_task
-            }
+        let background_task_id = match stored_identity.background_task_id.clone() {
+            Some(background_task_id) => background_task_id,
             _ => {
-                let background_task = self
+                let background_task_id = self
                     .register_background_task_for_identity(&binding, &stored_identity)
                     .await?;
-                stored_identity.background_task = Some(background_task.clone());
+                stored_identity.background_task_id = Some(background_task_id.clone());
                 self.store_identity(auth, &stored_identity)?;
-                background_task
+                background_task_id
             }
         };
 
         Ok(Some(authorization_header_for_task(
             &stored_identity,
-            &background_task,
+            &background_task_id,
         )?))
     }
 
@@ -301,7 +289,7 @@ impl BackgroundAgentTaskManager {
                 private_key_pkcs8_base64: key_material.private_key_pkcs8_base64,
                 public_key_ssh: key_material.public_key_ssh,
                 registered_at: Utc::now().to_rfc3339_opts(SecondsFormat::Secs, true),
-                background_task: None,
+                background_task_id: None,
                 abom: self.abom.clone(),
             };
             info!(
@@ -321,7 +309,7 @@ impl BackgroundAgentTaskManager {
         &self,
         binding: &AgentIdentityBinding,
         stored_identity: &StoredAgentIdentity,
-    ) -> Result<RegisteredBackgroundTask> {
+    ) -> Result<String> {
         let timestamp = Utc::now().to_rfc3339_opts(SecondsFormat::Secs, true);
         let request_body = RegisterTaskRequest {
             signature: sign_task_registration_payload(stored_identity, &timestamp)?,
@@ -346,20 +334,14 @@ impl BackgroundAgentTaskManager {
                 .json::<RegisterTaskResponse>()
                 .await
                 .with_context(|| format!("failed to parse background task response from {url}"))?;
-            let background_task = RegisteredBackgroundTask {
-                agent_runtime_id: stored_identity.agent_runtime_id.clone(),
-                task_id: decrypt_task_id_response(
-                    stored_identity,
-                    &response_body.encrypted_task_id,
-                )?,
-                registered_at: Utc::now().to_rfc3339_opts(SecondsFormat::Secs, true),
-            };
+            let background_task_id =
+                decrypt_task_id_response(stored_identity, &response_body.encrypted_task_id)?;
             info!(
-                agent_runtime_id = %background_task.agent_runtime_id,
-                task_id = %background_task.task_id,
+                agent_runtime_id = %stored_identity.agent_runtime_id,
+                task_id = %background_task_id,
                 "registered background agent task"
             );
-            return Ok(background_task);
+            return Ok(background_task_id);
         }
 
         let status = response.status();
@@ -487,13 +469,10 @@ pub fn cached_background_agent_task_authorization_header_value(
         return Ok(None);
     }
     stored_identity.validate_key_material()?;
-    let Some(background_task) = stored_identity.background_task.as_ref() else {
+    let Some(background_task_id) = stored_identity.background_task_id.as_ref() else {
         return Ok(None);
     };
-    if background_task.agent_runtime_id != stored_identity.agent_runtime_id {
-        return Ok(None);
-    }
-    authorization_header_for_task(&stored_identity, background_task).map(Some)
+    authorization_header_for_task(&stored_identity, background_task_id).map(Some)
 }
 
 impl StoredAgentIdentity {
@@ -518,11 +497,7 @@ impl StoredAgentIdentity {
             private_key_pkcs8_base64: record.agent_private_key,
             public_key_ssh: encode_ssh_ed25519_public_key(&signing_key.verifying_key()),
             registered_at: record.registered_at,
-            background_task: record.background_task.map(|task| RegisteredBackgroundTask {
-                agent_runtime_id: record.agent_runtime_id,
-                task_id: task.task_id,
-                registered_at: task.registered_at,
-            }),
+            background_task_id: record.background_task_id,
             abom,
         })
     }
@@ -534,12 +509,7 @@ impl StoredAgentIdentity {
             agent_runtime_id: self.agent_runtime_id.clone(),
             agent_private_key: self.private_key_pkcs8_base64.clone(),
             registered_at: self.registered_at.clone(),
-            background_task: self.background_task.as_ref().map(|task| {
-                AgentBackgroundTaskAuthRecord {
-                    task_id: task.task_id.clone(),
-                    registered_at: task.registered_at.clone(),
-                }
-            }),
+            background_task_id: self.background_task_id.clone(),
         }
     }
 
@@ -609,17 +579,17 @@ impl AgentIdentityBinding {
 
 fn authorization_header_for_task(
     stored_identity: &StoredAgentIdentity,
-    background_task: &RegisteredBackgroundTask,
+    background_task_id: &str,
 ) -> Result<String> {
     let timestamp = Utc::now().to_rfc3339_opts(SecondsFormat::Secs, true);
-    let signature = sign_agent_assertion_payload(stored_identity, background_task, &timestamp)?;
+    let signature = sign_agent_assertion_payload(stored_identity, background_task_id, &timestamp)?;
     let payload = serde_json::to_vec(&BTreeMap::from([
         (
             "agent_runtime_id",
-            background_task.agent_runtime_id.as_str(),
+            stored_identity.agent_runtime_id.as_str(),
         ),
         ("signature", signature.as_str()),
-        ("task_id", background_task.task_id.as_str()),
+        ("task_id", background_task_id),
         ("timestamp", timestamp.as_str()),
     ]))
     .context("failed to serialize agent assertion envelope")?;
@@ -631,13 +601,13 @@ fn authorization_header_for_task(
 
 fn sign_agent_assertion_payload(
     stored_identity: &StoredAgentIdentity,
-    background_task: &RegisteredBackgroundTask,
+    background_task_id: &str,
     timestamp: &str,
 ) -> Result<String> {
     let signing_key = stored_identity.signing_key()?;
     let payload = format!(
-        "{}:{}:{timestamp}",
-        background_task.agent_runtime_id, background_task.task_id
+        "{}:{background_task_id}:{timestamp}",
+        stored_identity.agent_runtime_id
     );
     Ok(BASE64_STANDARD.encode(signing_key.sign(payload.as_bytes()).to_bytes()))
 }
@@ -842,10 +812,7 @@ mod tests {
             agent_runtime_id: "agent_123".to_string(),
             agent_private_key: key_material.private_key_pkcs8_base64,
             registered_at: "2026-04-13T12:00:00Z".to_string(),
-            background_task: Some(AgentBackgroundTaskAuthRecord {
-                task_id: "task_123".to_string(),
-                registered_at: "2026-04-13T12:00:01Z".to_string(),
-            }),
+            background_task_id: Some("task_123".to_string()),
         })
         .expect("set agent identity");
 

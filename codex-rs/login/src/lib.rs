@@ -24,7 +24,6 @@ pub use agent_identity::BackgroundAgentTaskAuthMode;
 pub use agent_identity::BackgroundAgentTaskManager;
 pub use agent_identity::cached_background_agent_task_authorization_header_value;
 pub use api_bridge::auth_provider_from_auth;
-pub use auth::AgentBackgroundTaskAuthRecord;
 pub use auth::AgentIdentityAuthRecord;
 pub use auth::AuthConfig;
 pub use auth::AuthDotJson;
