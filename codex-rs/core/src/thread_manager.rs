@@ -910,8 +910,8 @@ impl ThreadManagerState {
         user_shell_override: Option<crate::shell::Shell>,
     ) -> CodexResult<NewThread> {
         let environment = self.environment_manager.default_environment();
-        let watch_registration = match environment.as_ref() {
-            Some(environment) if !environment.is_remote() => {
+        let watch_registration = match environment.is_remote() {
+            false => {
                 self.skills_watcher
                     .register_config(
                         &config,
@@ -921,7 +921,7 @@ impl ThreadManagerState {
                     )
                     .await
             }
-            Some(_) | None => crate::file_watcher::WatchRegistration::default(),
+            true => crate::file_watcher::WatchRegistration::default(),
         };
         let CodexSpawnOk {
             codex, thread_id, ..
