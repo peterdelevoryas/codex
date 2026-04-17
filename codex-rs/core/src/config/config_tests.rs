@@ -5618,6 +5618,51 @@ trust_level = "untrusted"
 }
 
 #[tokio::test]
+async fn trust_all_projects_marks_unknown_directory_as_trusted() -> anyhow::Result<()> {
+    let project_dir = TempDir::new()?;
+    let cfg = ConfigToml {
+        trust_all_projects: Some(true),
+        ..Default::default()
+    };
+
+    let active_project = cfg.get_active_project(project_dir.path(), None);
+
+    assert_eq!(
+        active_project,
+        Some(ProjectConfig {
+            trust_level: Some(TrustLevel::Trusted),
+        })
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn explicit_project_trust_overrides_trust_all_projects() -> anyhow::Result<()> {
+    let project_dir = TempDir::new()?;
+    let project_key = project_dir.path().to_string_lossy().to_string();
+    let cfg = ConfigToml {
+        projects: Some(HashMap::from([(
+            project_key,
+            ProjectConfig {
+                trust_level: Some(TrustLevel::Untrusted),
+            },
+        )])),
+        trust_all_projects: Some(true),
+        ..Default::default()
+    };
+
+    let active_project = cfg.get_active_project(project_dir.path(), None);
+
+    assert_eq!(
+        active_project,
+        Some(ProjectConfig {
+            trust_level: Some(TrustLevel::Untrusted),
+        })
+    );
+    Ok(())
+}
+
+#[tokio::test]
 async fn derive_sandbox_policy_falls_back_to_constraint_value_for_implicit_defaults()
 -> anyhow::Result<()> {
     let project_dir = TempDir::new()?;

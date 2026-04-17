@@ -303,6 +303,13 @@ pub struct ConfigToml {
     /// active.
     pub experimental_realtime_start_instructions: Option<String>,
     pub projects: Option<HashMap<String, ProjectConfig>>,
+    /// When `true`, treat directories without an explicit
+    /// `[projects."<path>"]` entry as trusted.
+    ///
+    /// This suppresses the directory trust prompt and allows project-local
+    /// `.codex/config.toml` files to load automatically. Explicit per-project
+    /// trust settings still take precedence.
+    pub trust_all_projects: Option<bool>,
 
     /// Controls the web search tool mode: disabled, cached, or live.
     pub web_search: Option<WebSearchMode>,
@@ -684,25 +691,31 @@ impl ConfigToml {
         resolved_cwd: &Path,
         repo_root: Option<&Path>,
     ) -> Option<ProjectConfig> {
-        let projects = self.projects.as_ref()?;
-
-        for normalized_cwd in normalized_project_lookup_keys(resolved_cwd) {
-            if let Some(project_config) = project_config_for_lookup_key(projects, &normalized_cwd) {
-                return Some(project_config);
-            }
-        }
-
-        if let Some(repo_root) = repo_root {
-            for normalized_repo_root in normalized_project_lookup_keys(repo_root) {
-                if let Some(project_config_for_root) =
-                    project_config_for_lookup_key(projects, &normalized_repo_root)
+        if let Some(projects) = self.projects.as_ref() {
+            for normalized_cwd in normalized_project_lookup_keys(resolved_cwd) {
+                if let Some(project_config) =
+                    project_config_for_lookup_key(projects, &normalized_cwd)
                 {
-                    return Some(project_config_for_root);
+                    return Some(project_config);
+                }
+            }
+
+            if let Some(repo_root) = repo_root {
+                for normalized_repo_root in normalized_project_lookup_keys(repo_root) {
+                    if let Some(project_config_for_root) =
+                        project_config_for_lookup_key(projects, &normalized_repo_root)
+                    {
+                        return Some(project_config_for_root);
+                    }
                 }
             }
         }
 
-        None
+        self.trust_all_projects
+            .unwrap_or(false)
+            .then_some(ProjectConfig {
+                trust_level: Some(TrustLevel::Trusted),
+            })
     }
 
     pub fn get_config_profile(

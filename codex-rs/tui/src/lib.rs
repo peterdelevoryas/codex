@@ -2240,6 +2240,33 @@ mod tests {
         Ok(())
     }
 
+    #[tokio::test]
+    async fn trust_all_projects_skips_trust_prompt() -> std::io::Result<()> {
+        let temp_dir = TempDir::new()?;
+        let project_dir = temp_dir.path().join("project");
+        std::fs::create_dir_all(&project_dir)?;
+        std::fs::write(
+            temp_dir.path().join(codex_config::CONFIG_TOML_FILE),
+            "trust_all_projects = true\n",
+        )?;
+
+        let config = ConfigBuilder::default()
+            .codex_home(temp_dir.path().to_path_buf())
+            .harness_overrides(ConfigOverrides {
+                cwd: Some(project_dir),
+                ..Default::default()
+            })
+            .build()
+            .await?;
+
+        let should_show = should_show_trust_screen(&config);
+        assert!(
+            !should_show,
+            "Trust prompt should not be shown when trust_all_projects is enabled"
+        );
+        Ok(())
+    }
+
     fn build_turn_context(config: &Config, cwd: PathBuf) -> TurnContextItem {
         let model = config
             .model

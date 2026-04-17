@@ -1633,6 +1633,44 @@ async fn project_layer_without_config_toml_is_disabled_when_untrusted_or_unknown
 }
 
 #[tokio::test]
+async fn invalid_project_config_errors_when_trust_all_projects_enabled() -> std::io::Result<()> {
+    let tmp = tempdir()?;
+    let project_root = tmp.path().join("project");
+    let nested = project_root.join("child");
+    tokio::fs::create_dir_all(nested.join(".codex")).await?;
+    tokio::fs::write(project_root.join(".git"), "gitdir: here").await?;
+    tokio::fs::write(nested.join(".codex").join(CONFIG_TOML_FILE), "foo =").await?;
+
+    let codex_home = tmp.path().join("home");
+    tokio::fs::create_dir_all(&codex_home).await?;
+    tokio::fs::write(
+        codex_home.join(CONFIG_TOML_FILE),
+        "trust_all_projects = true\n",
+    )
+    .await?;
+
+    let cwd = AbsolutePathBuf::from_absolute_path(&nested)?;
+    let err = load_config_layers_state(
+        LOCAL_FS.as_ref(),
+        &codex_home,
+        Some(cwd),
+        &[] as &[(String, TomlValue)],
+        LoaderOverrides::default(),
+        CloudRequirementsLoader::default(),
+    )
+    .await
+    .expect_err("trusted-by-default project config should be parsed");
+
+    assert!(
+        err.to_string()
+            .contains("Error parsing project config file"),
+        "unexpected error: {err}"
+    );
+
+    Ok(())
+}
+
+#[tokio::test]
 async fn cli_overrides_with_relative_paths_do_not_break_trust_check() -> std::io::Result<()> {
     let tmp = tempdir()?;
     let project_root = tmp.path().join("project");

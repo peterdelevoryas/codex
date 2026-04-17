@@ -60,6 +60,17 @@ When Codex knows which client started the turn, the legacy notify JSON payload a
 
 The generated JSON Schema for `config.toml` lives at `codex-rs/core/config.schema.json`.
 
+## Project trust
+
+To trust every project directory by default and skip the directory trust prompt,
+set this in `~/.codex/config.toml`:
+
+```toml
+trust_all_projects = true
+```
+
+Explicit `[projects."<path>"]` entries still override the global default.
+
 ## SQLite State DB
 
 Codex stores the SQLite-backed state DB under `sqlite_home` (config key) or the

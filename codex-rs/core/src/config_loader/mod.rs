@@ -565,12 +565,14 @@ struct ProjectTrustContext {
     repo_root_key: Option<String>,
     repo_root_lookup_keys: Option<Vec<String>>,
     projects_trust: std::collections::HashMap<String, TrustLevel>,
+    trust_all_projects: bool,
     user_config_file: AbsolutePathBuf,
 }
 
 #[derive(Deserialize)]
 struct ProjectTrustConfigToml {
     projects: Option<std::collections::HashMap<String, ProjectConfig>>,
+    trust_all_projects: Option<bool>,
 }
 
 struct ProjectTrustDecision {
@@ -619,6 +621,16 @@ impl ProjectTrustContext {
                     };
                 }
             }
+        }
+
+        if self.trust_all_projects {
+            return ProjectTrustDecision {
+                trust_level: Some(TrustLevel::Trusted),
+                trust_key: self
+                    .repo_root_key
+                    .clone()
+                    .unwrap_or_else(|| self.project_root_key.clone()),
+            };
         }
 
         ProjectTrustDecision {
@@ -709,6 +721,7 @@ async fn project_trust_context(
         repo_root_key,
         repo_root_lookup_keys,
         projects_trust,
+        trust_all_projects: project_trust_config.trust_all_projects.unwrap_or(false),
         user_config_file: user_config_file.clone(),
     })
 }

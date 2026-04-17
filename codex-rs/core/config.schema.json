@@ -2879,6 +2879,10 @@
       ],
       "description": "Nested tools section for feature toggles"
     },
+    "trust_all_projects": {
+      "description": "When `true`, treat directories without an explicit `[projects.\"<path>\"]` entry as trusted.\n\nThis suppresses the directory trust prompt and allows project-local `.codex/config.toml` files to load automatically. Explicit per-project trust settings still take precedence.",
+      "type": "boolean"
+    },
     "tui": {
       "allOf": [
         {
