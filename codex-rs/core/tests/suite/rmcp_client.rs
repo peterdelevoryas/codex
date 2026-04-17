@@ -224,6 +224,7 @@ async fn stdio_server_round_trip() -> anyhow::Result<()> {
     fixture
         .codex
         .submit(Op::UserTurn {
+            environments: None,
             items: vec![UserInput::Text {
                 text: "call the rmcp echo tool".into(),
                 text_elements: Vec::new(),
@@ -476,6 +477,7 @@ async fn stdio_mcp_parallel_tool_calls_default_false_runs_serially() -> anyhow::
     fixture
         .codex
         .submit(Op::UserTurn {
+            environments: None,
             items: vec![UserInput::Text {
                 text: "call the rmcp sync tool twice".into(),
                 text_elements: Vec::new(),
@@ -607,6 +609,7 @@ async fn stdio_mcp_parallel_tool_calls_opt_in_runs_concurrently() -> anyhow::Res
     fixture
         .codex
         .submit(Op::UserTurn {
+            environments: None,
             items: vec![UserInput::Text {
                 text: "call the rmcp sync tool twice".into(),
                 text_elements: Vec::new(),
@@ -703,6 +706,7 @@ async fn stdio_image_responses_round_trip() -> anyhow::Result<()> {
     fixture
         .codex
         .submit(Op::UserTurn {
+            environments: None,
             items: vec![UserInput::Text {
                 text: "call the rmcp image tool".into(),
                 text_elements: Vec::new(),
@@ -850,6 +854,7 @@ async fn stdio_image_responses_preserve_original_detail_metadata() -> anyhow::Re
     fixture
         .codex
         .submit(Op::UserTurn {
+            environments: None,
             items: vec![UserInput::Text {
                 text: "call the rmcp image_scenario tool".into(),
                 text_elements: Vec::new(),
@@ -1083,6 +1088,7 @@ async fn stdio_image_responses_are_sanitized_for_text_only_model() -> anyhow::Re
     fixture
         .codex
         .submit(Op::UserTurn {
+            environments: None,
             items: vec![UserInput::Text {
                 text: "call the rmcp image tool".into(),
                 text_elements: Vec::new(),
@@ -1188,6 +1194,7 @@ async fn stdio_server_propagates_whitelisted_env_vars() -> anyhow::Result<()> {
     fixture
         .codex
         .submit(Op::UserTurn {
+            environments: None,
             items: vec![UserInput::Text {
                 text: "call the rmcp echo tool".into(),
                 text_elements: Vec::new(),
@@ -1341,6 +1348,7 @@ async fn streamable_http_tool_call_round_trip() -> anyhow::Result<()> {
     fixture
         .codex
         .submit(Op::UserTurn {
+            environments: None,
             items: vec![UserInput::Text {
                 text: "call the rmcp streamable http echo tool".into(),
                 text_elements: Vec::new(),
@@ -1557,6 +1565,7 @@ async fn streamable_http_with_oauth_round_trip_impl() -> anyhow::Result<()> {
     fixture
         .codex
         .submit(Op::UserTurn {
+            environments: None,
             items: vec![UserInput::Text {
                 text: "call the rmcp streamable http oauth echo tool".into(),
                 text_elements: Vec::new(),

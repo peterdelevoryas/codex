@@ -503,6 +503,7 @@ async fn tool_search_returns_deferred_tools_without_follow_up_tool_injection() -
     let test = builder.build(&server).await?;
     test.codex
         .submit(Op::UserInput {
+            environments: None,
             items: vec![UserInput::Text {
                 text: "Find the calendar create tool".to_string(),
                 text_elements: Vec::new(),
@@ -777,6 +778,7 @@ async fn tool_search_returns_deferred_dynamic_tool_and_routes_follow_up_call() -
 
     test.codex
         .submit(Op::UserInput {
+            environments: None,
             items: vec![UserInput::Text {
                 text: "Use the automation tool".to_string(),
                 text_elements: Vec::new(),

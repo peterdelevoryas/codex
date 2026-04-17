@@ -169,6 +169,7 @@ async fn remote_models_long_model_slug_is_sent_with_high_reasoning() -> Result<(
 
     codex
         .submit(Op::UserTurn {
+            environments: None,
             items: vec![UserInput::Text {
                 text: "check model slug".into(),
                 text_elements: Vec::new(),
@@ -228,6 +229,7 @@ async fn namespaced_model_slug_uses_catalog_metadata_without_fallback_warning() 
 
     codex
         .submit(Op::UserTurn {
+            environments: None,
             items: vec![UserInput::Text {
                 text: "check namespaced model metadata".into(),
                 text_elements: Vec::new(),
@@ -393,6 +395,7 @@ async fn remote_models_remote_model_uses_unified_exec() -> Result<()> {
 
     codex
         .submit(Op::UserTurn {
+            environments: None,
             items: vec![UserInput::Text {
                 text: "run call".into(),
                 text_elements: Vec::new(),
@@ -617,6 +620,7 @@ async fn remote_models_apply_remote_base_instructions() -> Result<()> {
 
     codex
         .submit(Op::UserTurn {
+            environments: None,
             items: vec![UserInput::Text {
                 text: "hello remote".into(),
                 text_elements: Vec::new(),
