@@ -5,11 +5,7 @@ use chrono::Utc;
 use reqwest::header::HeaderMap;
 
 use codex_core::config::Config;
-use codex_core::config::Feature;
 use codex_login::AuthManager;
-use codex_login::BackgroundAgentTaskAuthMode;
-use codex_login::BackgroundAgentTaskManager;
-use codex_protocol::protocol::SessionSource;
 
 pub fn set_user_agent_suffix(suffix: &str) {
     if let Ok(mut guard) = codex_login::default_client::USER_AGENT_SUFFIX.lock() {
@@ -63,19 +59,13 @@ pub fn extract_chatgpt_account_id(token: &str) -> Option<String> {
         .map(str::to_string)
 }
 
-pub async fn load_auth_context() -> Option<(AuthManager, BackgroundAgentTaskAuthMode)> {
+pub async fn load_auth_manager() -> Option<AuthManager> {
     // TODO: pass in cli overrides once cloud tasks properly support them.
     let config = Config::load_with_cli_overrides(Vec::new()).await.ok()?;
-    let background_agent_task_auth_mode = BackgroundAgentTaskAuthMode::from_feature_enabled(
-        config.features.enabled(Feature::UseAgentIdentity),
-    );
-    Some((
-        AuthManager::new(
-            config.codex_home.to_path_buf(),
-            /*enable_codex_api_key_env*/ false,
-            config.cli_auth_credentials_store_mode,
-        ),
-        background_agent_task_auth_mode,
+    Some(AuthManager::new(
+        config.codex_home.to_path_buf(),
+        /*enable_codex_api_key_env*/ false,
+        config.cli_auth_credentials_store_mode,
     ))
 }
 
@@ -94,32 +84,19 @@ pub async fn build_chatgpt_headers() -> HeaderMap {
         USER_AGENT,
         HeaderValue::from_str(&ua).unwrap_or(HeaderValue::from_static("codex-cli")),
     );
-    if let Some((am, background_agent_task_auth_mode)) = load_auth_context().await
+    if let Some(am) = load_auth_manager().await
         && let Some(auth) = am.auth().await
+        && let Ok(tok) = auth.get_token()
+        && !tok.is_empty()
     {
-        let am = std::sync::Arc::new(am);
-        let base_url = normalize_base_url(
-            &std::env::var("CODEX_CLOUD_TASKS_BASE_URL")
-                .unwrap_or_else(|_| "https://chatgpt.com/backend-api".to_string()),
-        );
-        let background_agent_task_manager = BackgroundAgentTaskManager::new_with_auth_mode(
-            am,
-            base_url,
-            SessionSource::Cli,
-            background_agent_task_auth_mode,
-        );
-        if let Some(authorization_header_value) = background_agent_task_manager
-            .authorization_header_value_or_bearer(&auth)
-            .await
-            && let Ok(hv) = HeaderValue::from_str(&authorization_header_value)
-        {
+        let v = format!("Bearer {tok}");
+        if let Ok(hv) = HeaderValue::from_str(&v) {
             headers.insert(AUTHORIZATION, hv);
         }
-        if let Some(acc) = auth.get_account_id().or_else(|| {
-            auth.get_token()
-                .ok()
-                .and_then(|token| extract_chatgpt_account_id(&token))
-        }) && let Ok(name) = HeaderName::from_bytes(b"ChatGPT-Account-Id")
+        if let Some(acc) = auth
+            .get_account_id()
+            .or_else(|| extract_chatgpt_account_id(&tok))
+            && let Ok(name) = HeaderName::from_bytes(b"ChatGPT-Account-Id")
             && let Ok(hv) = HeaderValue::from_str(&acc)
         {
             headers.insert(name, hv);

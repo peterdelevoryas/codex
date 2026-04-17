@@ -12,9 +12,7 @@ use chrono::Utc;
 use codex_cloud_tasks_client::TaskStatus;
 use codex_git_utils::current_branch_name;
 use codex_git_utils::default_branch_name;
-use codex_login::BackgroundAgentTaskManager;
 use codex_login::default_client::get_codex_user_agent;
-use codex_protocol::protocol::SessionSource;
 use owo_colors::OwoColorize;
 use owo_colors::Stream;
 use std::cmp::Ordering;
@@ -70,46 +68,40 @@ async fn init_backend(user_agent_suffix: &str) -> anyhow::Result<BackendContext>
     };
     append_error_log(format!("startup: base_url={base_url} path_style={style}"));
 
-    let Some((auth_manager, background_agent_task_auth_mode)) = util::load_auth_context().await
-    else {
-        eprintln!(
-            "Not signed in. Please run 'codex login' to sign in with ChatGPT, then re-run 'codex cloud'."
-        );
-        std::process::exit(1);
+    let auth_manager = util::load_auth_manager().await;
+    let auth = match auth_manager.as_ref() {
+        Some(manager) => manager.auth().await,
+        None => None,
     };
-    let auth_manager = Arc::new(auth_manager);
-    let Some(auth) = auth_manager.auth().await else {
-        eprintln!(
-            "Not signed in. Please run 'codex login' to sign in with ChatGPT, then re-run 'codex cloud'."
-        );
-        std::process::exit(1);
+    let auth = match auth {
+        Some(auth) => auth,
+        None => {
+            eprintln!(
+                "Not signed in. Please run 'codex login' to sign in with ChatGPT, then re-run 'codex cloud'."
+            );
+            std::process::exit(1);
+        }
     };
 
     if let Some(acc) = auth.get_account_id() {
         append_error_log(format!("auth: mode=ChatGPT account_id={acc}"));
     }
 
-    let authorization_header_value = BackgroundAgentTaskManager::new_with_auth_mode(
-        Arc::clone(&auth_manager),
-        base_url.clone(),
-        SessionSource::Cli,
-        background_agent_task_auth_mode,
-    )
-    .authorization_header_value_or_bearer(&auth)
-    .await;
-    let Some(authorization_header_value) = authorization_header_value else {
-        eprintln!(
-            "Not signed in. Please run 'codex login' to sign in with ChatGPT, then re-run 'codex cloud'."
-        );
-        std::process::exit(1);
+    let token = match auth.get_token() {
+        Ok(t) if !t.is_empty() => t,
+        _ => {
+            eprintln!(
+                "Not signed in. Please run 'codex login' to sign in with ChatGPT, then re-run 'codex cloud'."
+            );
+            std::process::exit(1);
+        }
     };
 
-    http = http.with_authorization_header_value(authorization_header_value);
-    if let Some(acc) = auth.get_account_id().or_else(|| {
-        auth.get_token()
-            .ok()
-            .and_then(|token| util::extract_chatgpt_account_id(&token))
-    }) {
+    http = http.with_bearer_token(token.clone());
+    if let Some(acc) = auth
+        .get_account_id()
+        .or_else(|| util::extract_chatgpt_account_id(&token))
+    {
         append_error_log(format!("auth: set ChatGPT-Account-Id header: {acc}"));
         http = http.with_chatgpt_account_id(acc);
     }

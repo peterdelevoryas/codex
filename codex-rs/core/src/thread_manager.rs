@@ -20,7 +20,6 @@ use codex_app_server_protocol::ThreadHistoryBuilder;
 use codex_app_server_protocol::TurnStatus;
 use codex_exec_server::EnvironmentManager;
 use codex_login::AuthManager;
-use codex_login::BackgroundAgentTaskAuthMode;
 use codex_login::CodexAuth;
 use codex_model_provider_info::ModelProviderInfo;
 use codex_model_provider_info::OPENAI_PROVIDER_ID;
@@ -250,20 +249,13 @@ impl ThreadManager {
             state: Arc::new(ThreadManagerState {
                 threads: Arc::new(RwLock::new(HashMap::new())),
                 thread_created_tx,
-                models_manager: Arc::new(
-                    ModelsManager::new_with_provider_and_background_agent_task_auth_mode(
-                        codex_home.to_path_buf(),
-                        auth_manager.clone(),
-                        config.model_catalog.clone(),
-                        collaboration_modes_config,
-                        openai_models_provider,
-                        BackgroundAgentTaskAuthMode::from_feature_enabled(
-                            config
-                                .features
-                                .enabled(crate::config::Feature::UseAgentIdentity),
-                        ),
-                    ),
-                ),
+                models_manager: Arc::new(ModelsManager::new_with_provider(
+                    codex_home.to_path_buf(),
+                    auth_manager.clone(),
+                    config.model_catalog.clone(),
+                    collaboration_modes_config,
+                    openai_models_provider,
+                )),
                 environment_manager,
                 skills_manager,
                 plugins_manager,
