@@ -6337,8 +6337,7 @@ impl CodexMessageProcessor {
             .thread_manager
             .environment_manager()
             .default_environment()
-            .get_filesystem();
-        let fs = Some(fs);
+            .map(|environment| environment.get_filesystem());
         let cli_overrides = self.current_cli_overrides();
         let mut data = Vec::new();
         for cwd in cwds {
