@@ -916,6 +916,11 @@ impl BottomPane {
         self.is_task_running
     }
 
+    pub(crate) fn terminal_title_requires_action(&self) -> bool {
+        self.active_view()
+            .is_some_and(|view| view.terminal_title_requires_action())
+    }
+
     #[cfg(test)]
     pub(crate) fn has_active_view(&self) -> bool {
         !self.view_stack.is_empty()

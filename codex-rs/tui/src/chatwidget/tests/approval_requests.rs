@@ -51,6 +51,51 @@ async fn exec_approval_emits_proposed_command_and_decision_history() {
     );
 }
 
+#[tokio::test]
+async fn terminal_title_shows_action_required_while_exec_approval_is_pending() {
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    chat.bottom_pane.set_task_running(/*running*/ true);
+    chat.refresh_terminal_title();
+
+    let request = ExecApprovalRequestEvent {
+        call_id: "call-action-required".into(),
+        approval_id: Some("call-action-required".into()),
+        turn_id: "turn-action-required".into(),
+        command: vec!["bash".into(), "-lc".into(), "echo hello".into()],
+        cwd: AbsolutePathBuf::current_dir().expect("current dir"),
+        reason: Some("need confirmation".into()),
+        network_approval_context: None,
+        proposed_execpolicy_amendment: None,
+        proposed_network_policy_amendments: None,
+        additional_permissions: None,
+        available_decisions: None,
+        parsed_cmd: vec![],
+    };
+    chat.handle_codex_event(Event {
+        id: "sub-action-required".into(),
+        msg: EventMsg::ExecApprovalRequest(request),
+    });
+
+    chat.pre_draw_tick();
+
+    assert_eq!(
+        chat.last_terminal_title,
+        Some("[ ! ] Action Required | project".to_string())
+    );
+    assert!(!chat.should_animate_terminal_title_spinner());
+
+    chat.handle_key_event(KeyEvent::new(KeyCode::Char('y'), KeyModifiers::NONE));
+    chat.pre_draw_tick();
+
+    let title = chat
+        .last_terminal_title
+        .as_deref()
+        .expect("terminal title should be restored after approval");
+    assert!(title.contains("project"));
+    assert!(!title.contains("Action Required"));
+    assert!(chat.should_animate_terminal_title_spinner());
+}
+
 #[test]
 fn app_server_exec_approval_request_splits_shell_wrapped_command() {
     let script = r#"python3 -c 'print("Hello, world!")'"#;

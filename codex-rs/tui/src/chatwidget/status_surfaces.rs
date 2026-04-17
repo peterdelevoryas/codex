@@ -16,6 +16,9 @@ pub(super) const TERMINAL_TITLE_SPINNER_FRAMES: [&str; 10] =
 /// Time between spinner frame advances in the terminal title.
 pub(super) const TERMINAL_TITLE_SPINNER_INTERVAL: Duration = Duration::from_millis(100);
 
+/// Prefix shown in the terminal title when the agent is blocked on user input.
+const TERMINAL_TITLE_ACTION_REQUIRED_PREFIX: &str = "[ ! ] Action Required";
+
 /// Compact runtime states that can be rendered into the terminal title.
 ///
 /// This is intentionally smaller than the full status-header vocabulary. The
@@ -179,6 +182,7 @@ impl ChatWidget {
     /// When the `spinner` item is present in an animated running state, this also
     /// schedules the next frame so the spinner keeps advancing.
     fn refresh_terminal_title_from_selections(&mut self, selections: &StatusSurfaceSelections) {
+        self.last_terminal_title_requires_action = self.terminal_title_requires_action();
         if selections.terminal_title_items.is_empty() {
             if let Err(err) = self.clear_managed_terminal_title() {
                 tracing::debug!(error = %err, "failed to clear terminal title");
@@ -187,22 +191,7 @@ impl ChatWidget {
         }
 
         let now = Instant::now();
-        let mut previous = None;
-        let title = selections
-            .terminal_title_items
-            .iter()
-            .copied()
-            .filter_map(|item| {
-                self.terminal_title_value_for_item(item, now)
-                    .map(|value| (item, value))
-            })
-            .fold(String::new(), |mut title, (item, value)| {
-                title.push_str(item.separator_from_previous(previous));
-                title.push_str(&value);
-                previous = Some(item);
-                title
-            });
-        let title = (!title.is_empty()).then_some(title);
+        let title = self.terminal_title_text_for_selections(selections, now);
         let should_animate_spinner =
             self.should_animate_terminal_title_spinner_with_selections(selections);
         if self.last_terminal_title == title {
@@ -260,6 +249,54 @@ impl ChatWidget {
         self.warn_invalid_terminal_title_items_once(&selections.invalid_terminal_title_items);
         self.sync_status_surface_shared_state(&selections);
         self.refresh_terminal_title_from_selections(&selections);
+    }
+
+    fn terminal_title_requires_action(&self) -> bool {
+        self.bottom_pane.terminal_title_requires_action()
+    }
+
+    fn terminal_title_text_for_selections(
+        &mut self,
+        selections: &StatusSurfaceSelections,
+        now: Instant,
+    ) -> Option<String> {
+        if self.terminal_title_requires_action() {
+            return Some(self.action_required_terminal_title_text(selections, now));
+        }
+
+        let mut previous = None;
+        let title = selections
+            .terminal_title_items
+            .iter()
+            .copied()
+            .filter_map(|item| {
+                self.terminal_title_value_for_item(item, now)
+                    .map(|value| (item, value))
+            })
+            .fold(String::new(), |mut title, (item, value)| {
+                title.push_str(item.separator_from_previous(previous));
+                title.push_str(&value);
+                previous = Some(item);
+                title
+            });
+        (!title.is_empty()).then_some(title)
+    }
+
+    fn action_required_terminal_title_text(
+        &mut self,
+        selections: &StatusSurfaceSelections,
+        now: Instant,
+    ) -> String {
+        let mut parts = vec![TERMINAL_TITLE_ACTION_REQUIRED_PREFIX.to_string()];
+        for item in selections.terminal_title_items.iter().copied() {
+            if matches!(item, TerminalTitleItem::Spinner | TerminalTitleItem::Status) {
+                continue;
+            }
+            if let Some(value) = self.terminal_title_value_for_item(item, now) {
+                parts.push(value);
+            }
+        }
+        parts.join(" | ")
     }
 
     pub(super) fn request_status_line_branch_refresh(&mut self) {
@@ -550,6 +587,10 @@ impl ChatWidget {
             return "Starting".to_string();
         }
 
+        if self.terminal_title_requires_action() {
+            return TERMINAL_TITLE_ACTION_REQUIRED_PREFIX.to_string();
+        }
+
         match self.terminal_title_status_kind {
             TerminalTitleStatusKind::Working if !self.bottom_pane.is_task_running() => {
                 "Ready".to_string()
@@ -596,6 +637,10 @@ impl ChatWidget {
     }
 
     fn terminal_title_has_active_progress(&self) -> bool {
+        if self.terminal_title_requires_action() {
+            return false;
+        }
+
         self.mcp_startup_status.is_some()
             || self.bottom_pane.is_task_running()
             || self.terminal_title_status_kind == TerminalTitleStatusKind::Undoing
