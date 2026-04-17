@@ -453,6 +453,18 @@ fn make_mcp_tool_with_meta(
     }
 }
 
+fn direct_exposed_builtin_codex_apps_meta() -> JsonObject {
+    serde_json::json!({
+        "_codex_apps": {
+            "provider": "builtin",
+            "direct_expose": true,
+        },
+    })
+    .as_object()
+    .cloned()
+    .expect("tool metadata object")
+}
+
 fn numbered_mcp_tools(count: usize) -> HashMap<String, ToolInfo> {
     (0..count)
         .map(|index| {
@@ -1146,23 +1158,13 @@ async fn mcp_tool_exposure_directly_exposes_builtin_codex_apps_tools_marked_for_
     let config = test_config().await;
     let tools_config = tools_config_for_mcp_tool_exposure(/*search_tool*/ true).await;
     let mcp_tools = HashMap::from([(
-        "mcp__codex_apps__library_search_file".to_string(),
+        "mcp__codex_apps__builtin_search_file".to_string(),
         make_mcp_tool_with_meta(
             CODEX_APPS_MCP_SERVER_NAME,
-            "library_search_file",
+            "builtin_search_file",
             /*connector_id*/ None,
             /*connector_name*/ None,
-            Some(
-                serde_json::json!({
-                    "_codex_apps": {
-                        "provider": "builtin",
-                        "direct_expose": true,
-                    },
-                })
-                .as_object()
-                .cloned()
-                .expect("tool metadata object"),
-            ),
+            Some(direct_exposed_builtin_codex_apps_meta()),
         ),
     )]);
 
@@ -1176,7 +1178,7 @@ async fn mcp_tool_exposure_directly_exposes_builtin_codex_apps_tools_marked_for_
 
     assert_eq!(
         exposure.direct_tools.into_keys().collect::<Vec<_>>(),
-        vec!["mcp__codex_apps__library_search_file".to_string()]
+        vec!["mcp__codex_apps__builtin_search_file".to_string()]
     );
     assert!(exposure.deferred_tools.is_none());
 }
@@ -1188,23 +1190,13 @@ async fn mcp_tool_exposure_keeps_direct_exposed_builtin_codex_apps_tools_direct_
     let tools_config = tools_config_for_mcp_tool_exposure(/*search_tool*/ true).await;
     let mut mcp_tools = numbered_mcp_tools(DIRECT_MCP_TOOL_EXPOSURE_THRESHOLD);
     mcp_tools.insert(
-        "mcp__codex_apps__library_search_file".to_string(),
+        "mcp__codex_apps__builtin_search_file".to_string(),
         make_mcp_tool_with_meta(
             CODEX_APPS_MCP_SERVER_NAME,
-            "library_search_file",
+            "builtin_search_file",
             /*connector_id*/ None,
             /*connector_name*/ None,
-            Some(
-                serde_json::json!({
-                    "_codex_apps": {
-                        "provider": "builtin",
-                        "direct_expose": true,
-                    },
-                })
-                .as_object()
-                .cloned()
-                .expect("tool metadata object"),
-            ),
+            Some(direct_exposed_builtin_codex_apps_meta()),
         ),
     );
 
@@ -1218,13 +1210,13 @@ async fn mcp_tool_exposure_keeps_direct_exposed_builtin_codex_apps_tools_direct_
 
     assert_eq!(
         exposure.direct_tools.into_keys().collect::<Vec<_>>(),
-        vec!["mcp__codex_apps__library_search_file".to_string()]
+        vec!["mcp__codex_apps__builtin_search_file".to_string()]
     );
     let deferred_tools = exposure
         .deferred_tools
         .as_ref()
         .expect("large tool sets should be discoverable through tool_search");
-    assert!(deferred_tools.contains_key("mcp__codex_apps__library_search_file"));
+    assert!(deferred_tools.contains_key("mcp__codex_apps__builtin_search_file"));
     assert!(deferred_tools.contains_key("mcp__rmcp__tool_0"));
 }
 

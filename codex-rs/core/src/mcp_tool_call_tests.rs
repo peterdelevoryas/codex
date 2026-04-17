@@ -523,15 +523,15 @@ fn codex_apps_connectors_support_persistent_approval() {
 fn direct_exposed_builtin_codex_apps_tools_do_not_support_persistent_approval() {
     let invocation = McpInvocation {
         server: CODEX_APPS_MCP_SERVER_NAME.to_string(),
-        tool: "library_search_file".to_string(),
+        tool: "builtin_search_file".to_string(),
         arguments: None,
     };
     let mut metadata = approval_metadata(
         /*connector_id*/ None,
         /*connector_name*/ None,
         /*connector_description*/ None,
-        /*tool_title*/ Some("Library Search File"),
-        /*tool_description*/ Some("Search library files."),
+        /*tool_title*/ Some("Builtin Search File"),
+        /*tool_description*/ Some("Search builtin files."),
     );
     metadata.codex_apps_meta = Some(direct_exposed_builtin_codex_apps_meta());
 

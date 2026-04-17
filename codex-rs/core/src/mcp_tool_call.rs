@@ -14,7 +14,7 @@ use crate::arc_monitor::ArcMonitorOutcome;
 use crate::arc_monitor::monitor_action;
 use crate::codex::Session;
 use crate::codex::TurnContext;
-use crate::codex_apps_library_download::maybe_materialize_codex_apps_library_download_result;
+use crate::codex_apps_file_download::maybe_materialize_codex_apps_file_download_result;
 use crate::codex_apps_mcp_tools::CODEX_APPS_META_KEY;
 use crate::codex_apps_mcp_tools::is_direct_exposed_codex_apps_builtin;
 use crate::config::Config;
@@ -480,11 +480,11 @@ async fn execute_mcp_tool_call(
         .call_tool(server, tool_name, rewritten_arguments, request_meta)
         .await
         .map_err(|e| format!("tool call error: {e:?}"))?;
-    let result = maybe_materialize_codex_apps_library_download_result(
+    let result = maybe_materialize_codex_apps_file_download_result(
         sess,
         turn_context,
         server,
-        tool_name,
+        metadata.and_then(|metadata| metadata.codex_apps_meta.as_ref()),
         result,
     )
     .await;
