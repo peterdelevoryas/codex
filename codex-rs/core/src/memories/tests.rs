@@ -490,7 +490,7 @@ mod phase2 {
                 CodexAuth::from_api_key("dummy"),
                 config.model_provider.clone(),
                 config.codex_home.to_path_buf(),
-                std::sync::Arc::new(codex_exec_server::EnvironmentManager::from_exec_server_url(
+                std::sync::Arc::new(codex_exec_server::EnvironmentManager::new(
                     codex_exec_server::EnvironmentManagerArgs::default(),
                 )),
             );

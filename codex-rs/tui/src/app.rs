@@ -9801,7 +9801,7 @@ guardian_approval = true
             backtrack_render_pending: false,
             feedback: codex_feedback::CodexFeedback::new(),
             feedback_audience: FeedbackAudience::External,
-            environment_manager: Arc::new(EnvironmentManager::from_exec_server_url(
+            environment_manager: Arc::new(EnvironmentManager::new(
                 codex_exec_server::EnvironmentManagerArgs::default(),
             )),
             remote_app_server_url: None,
@@ -9858,7 +9858,7 @@ guardian_approval = true
                 backtrack_render_pending: false,
                 feedback: codex_feedback::CodexFeedback::new(),
                 feedback_audience: FeedbackAudience::External,
-                environment_manager: Arc::new(EnvironmentManager::from_exec_server_url(
+                environment_manager: Arc::new(EnvironmentManager::new(
                     codex_exec_server::EnvironmentManagerArgs::default(),
                 )),
                 remote_app_server_url: None,
