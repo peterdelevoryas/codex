@@ -918,7 +918,7 @@ impl BottomPane {
 
     pub(crate) fn terminal_title_requires_action(&self) -> bool {
         self.active_view()
-            .is_some_and(|view| view.terminal_title_requires_action())
+            .is_some_and(bottom_pane_view::BottomPaneView::terminal_title_requires_action)
     }
 
     #[cfg(test)]
