@@ -123,7 +123,7 @@ mod external_agent_config_migration_startup;
 mod external_editor;
 mod file_search;
 mod frames;
-mod get_git_diff;
+mod get_repo_diff;
 mod history_cell;
 pub(crate) mod insert_history;
 pub use insert_history::insert_history_lines;

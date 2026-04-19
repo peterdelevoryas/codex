@@ -247,13 +247,10 @@ impl ChatWidget {
                 self.add_diff_in_progress();
                 let tx = self.app_event_tx.clone();
                 tokio::spawn(async move {
-                    let text = match get_git_diff().await {
-                        Ok((is_git_repo, diff_text)) => {
-                            if is_git_repo {
-                                diff_text
-                            } else {
-                                "`/diff` — _not inside a git repository_".to_string()
-                            }
+                    let text = match get_repo_diff().await {
+                        Ok(Some(diff_text)) => diff_text,
+                        Ok(None) => {
+                            "`/diff` — _not inside a Git or Sapling repository_".to_string()
                         }
                         Err(e) => format!("Failed to compute diff: {e}"),
                     };
